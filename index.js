@@ -15,7 +15,7 @@ io.listen(3001);
 io.on("connection", (socket) => {
   players.push({
     id: socket.id,
-    position: [0, 0, 0],
+    position: [players.length * 10, 0, 0],
     rotation: 0,
   });
 
