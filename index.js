@@ -8,7 +8,7 @@ const rooms = new Map(); // roomName -> Map of players
 
 const io = new Server({
   cors: {
-    origin: "*",
+    origin: process.env.ORIGIN,
   },
 });
 
@@ -21,16 +21,14 @@ function generateRoomId() {
 
 const getRoomPlayers = (roomId) => {
   const room = rooms.get(roomId);
-  if (!room.players.values()) return [];
-  const players = Array.from(room.players.values());
-
-  return players;
+  if (!room || !room.players) return [];
+  return Array.from(room.players.values());
 };
 
 const addPlayerToRoom = (room, socketId) => {
   if (!rooms.has(room)) return;
   const roomPlayers = rooms.get(room).players;
-  const position = [roomPlayers.size * 10, 0, 0];
+  const position = [0, 0, 0];
   roomPlayers.set(socketId, {
     id: socketId,
     coins: 0,
@@ -40,10 +38,10 @@ const addPlayerToRoom = (room, socketId) => {
 };
 
 const removePlayerFromRoom = (room, socketId) => {
-  const roomPlayers = getRoomPlayers(room);
-  if (roomPlayers) {
-    roomPlayers.delete(socketId);
-    if (roomPlayers.size === 0) rooms.delete(room);
+  const roomObj = rooms.get(room);
+  if (roomObj && roomObj.players) {
+    roomObj.players.delete(socketId);
+    if (roomObj.players.size === 0) rooms.delete(room);
   }
 };
 
@@ -153,7 +151,7 @@ io.on("connection", (socket) => {
     console.log("Player Disconnect");
     if (!rooms.has(room)) return;
     if (
-      !rooms.get(room).creator === socket.id &&
+      rooms.get(room).creator !== socket.id &&
       rooms.get(room).players.size > 1
     ) {
       rooms.get(room).creator = rooms
@@ -163,10 +161,10 @@ io.on("connection", (socket) => {
 
       removePlayerFromRoom(room, socket.id);
       io.to(room).emit("players", Array.from(rooms.get(room).players.values()));
+    } else {
+      removeRoom(room);
+      io.to(room).emit("roomDisconnected");
     }
-
-    removeRoom(room);
-    io.to(room).emit("roomDisconnected");
   });
 });
 
