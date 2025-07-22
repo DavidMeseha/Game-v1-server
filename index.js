@@ -8,7 +8,7 @@ const rooms = new Map(); // roomName -> Map of players
 
 const io = new Server({
   cors: {
-    origin: process.env.ORIGIN,
+    origin: "*",
   },
 });
 
