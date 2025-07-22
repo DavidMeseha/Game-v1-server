@@ -132,6 +132,16 @@ io.on("connection", (socket) => {
 
   socket.on("coinPicked", ({ coinPosition }) => {
     if (!rooms.has(room)) return;
+    const idx = rooms
+      .get(room)
+      .coins.findIndex(
+        (c) =>
+          c[0] === coinPosition[0] &&
+          c[1] === coinPosition[1] &&
+          c[2] === coinPosition[2]
+      );
+    if (idx === -1) return; // Coin already picked
+
     rooms.get(room).players.get(socket.id).coins += 1;
     io.to(room).emit(
       "coins",
