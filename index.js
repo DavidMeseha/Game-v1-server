@@ -9,7 +9,6 @@ const rooms = new Map(); // roomName -> Map of players
 const io = new Server({
   cors: {
     origin: process.env.ORIGIN,
-    methods: ["GET", "POST"],
   },
 });
 
@@ -87,14 +86,14 @@ io.on("connection", (socket) => {
 
     socket.emit("id", socket.id);
     socket.emit("created", room);
+  });
 
-    socket.on("cancelRoom", () => {
-      console.log("delete room", room);
-      removeRoom(room);
+  socket.on("cancelRoom", () => {
+    console.log("delete room", room);
+    removeRoom(room);
 
-      io.to(room).emit("roomDisconnected");
-      socket.leave(room);
-    });
+    io.to(room).emit("roomDisconnected");
+    socket.leave(room);
   });
 
   socket.on("joinRoom", (roomId) => {
@@ -111,15 +110,15 @@ io.on("connection", (socket) => {
       socket.emit("started");
       socket.emit("players", getRoomPlayers(room, socket.id));
     }
+  });
 
-    socket.on("leaveRoom", () => {
-      console.log("leave room", room);
-      removePlayerFromRoom(room, socket.id);
+  socket.on("leaveRoom", () => {
+    console.log("leave room", room);
+    removePlayerFromRoom(room, socket.id);
 
-      io.to(room).emit("playersCount", rooms.get(room).players.size);
+    io.to(room).emit("playersCount", rooms.get(room).players.size);
 
-      socket.leave(room);
-    });
+    socket.leave(room);
   });
 
   socket.on("start", () => {
