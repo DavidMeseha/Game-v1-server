@@ -19,7 +19,7 @@ const getRoomPlayers = (roomId) => {
   return Array.from(room.players.values());
 };
 
-const addPlayerToRoom = (room, socketId) => {
+const addPlayerToRoom = (room, socketId, isSpectator) => {
   if (!rooms.has(room)) return;
   const roomPlayers = rooms.get(room).players;
   const position = [0, 0, 0];
@@ -28,6 +28,7 @@ const addPlayerToRoom = (room, socketId) => {
     coins: 0,
     position,
     rotation: 0,
+    isSpectator,
   });
 };
 
@@ -57,7 +58,8 @@ const updatePlayerPositionInRoom = (room, socketId, position, rotation) => {
 io.on("connection", (socket) => {
   let room = null;
 
-  socket.on("createRoom", () => {
+  socket.on("createRoom", ({ isSpectator }) => {
+    console.log(isSpectator);
     room = generateRoomId();
     console.log("Create Room", room);
     socket.join(room);
@@ -74,10 +76,11 @@ io.on("connection", (socket) => {
       coins: 0,
       position,
       rotation: 0,
+      isSpectator,
     });
 
     socket.emit("id", socket.id);
-    socket.emit("created", room);
+    socket.emit("created", { room, isSpectator });
   });
 
   socket.on("cancelRoom", () => {
@@ -88,14 +91,15 @@ io.on("connection", (socket) => {
     socket.leave(room);
   });
 
-  socket.on("joinRoom", (roomId) => {
-    console.log("Join Room", roomId);
-    if (!rooms.has(roomId)) return socket.emit("error", "Room dose not exist.");
-    room = roomId;
+  socket.on("joinRoom", ({ roomName, isSpectator }) => {
+    console.log("Join Room", roomName);
+    if (!rooms.has(roomName))
+      return socket.emit("error", "Room dose not exist.");
+    room = roomName;
     socket.join(room);
-    addPlayerToRoom(room, socket.id);
+    addPlayerToRoom(room, socket.id, isSpectator);
 
-    socket.emit("id", socket.id);
+    socket.emit("joined", { isSpectator, id: socket.id });
     io.to(room).emit("playersCount", rooms.get(room).players.size);
     io.to(room).emit("players", getRoomPlayers(room, socket.id));
     if (rooms.get(room).inGame) {
@@ -109,6 +113,7 @@ io.on("connection", (socket) => {
     removePlayerFromRoom(room, socket.id);
 
     io.to(room).emit("playersCount", rooms.get(room).players.size);
+    io.to(room).emit("players", getRoomPlayers(room, socket.id));
 
     socket.leave(room);
   });

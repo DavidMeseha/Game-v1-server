@@ -278,25 +278,43 @@ export function getRandomInt(max) {
 }
 
 export function getGameCoins() {
+  const used = new Set();
   const values = [];
-  for (let i = 0; i < 10; i++) {
+  while (values.length < 10 && used.size < coinPositionOption.length) {
     const idx = getRandomInt(coinPositionOption.length);
-    values.push(coinPositionOption[idx]);
+    if (!used.has(idx)) {
+      used.add(idx);
+      values.push(coinPositionOption[idx]);
+    }
   }
-
   return values;
 }
 
-export function handlePickedCoin(coinPosition, coins) {
+export function handlePickedCoin(pickedCoinPosition, coins) {
   const index = coins.findIndex(
     (c) =>
-      c[0] === coinPosition[0] &&
-      c[1] === coinPosition[1] &&
-      c[2] === coinPosition[2]
+      c[0] === pickedCoinPosition[0] &&
+      c[1] === pickedCoinPosition[1] &&
+      c[2] === pickedCoinPosition[2]
   );
   if (index !== -1) {
     coins.splice(index, 1);
-    coins.push(coinPositionOption[getRandomInt(coinPositionOption.length)]);
+
+    // Find a new unique position
+    let newPos;
+    let tries = 0;
+    do {
+      newPos = coinPositionOption[getRandomInt(coinPositionOption.length)];
+      tries++;
+      // Prevent infinite loop if all positions are taken
+      if (tries > coinPositionOption.length) break;
+    } while (
+      coins.some(
+        (c) => c[0] === newPos[0] && c[1] === newPos[1] && c[2] === newPos[2]
+      )
+    );
+
+    coins.push(newPos);
   }
 
   return coins;
