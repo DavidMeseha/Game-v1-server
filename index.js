@@ -112,8 +112,10 @@ io.on("connection", (socket) => {
     console.log("leave room", room);
     removePlayerFromRoom(room, socket.id);
 
-    io.to(room).emit("playersCount", rooms.get(room).players.size);
-    io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    if (rooms.get(room)) {
+      io.to(room).emit("playersCount", rooms.get(room).players?.size ?? 0);
+      io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    }
 
     socket.leave(room);
   });
