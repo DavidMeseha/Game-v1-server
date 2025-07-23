@@ -1,7 +1,6 @@
-import { v4 as uuid } from "uuid";
 import { Server } from "socket.io";
 import dotenv from "dotenv";
-import { getGameCoins, handlePickedCoin } from "./coinOptions.js";
+import { generateRoomId, getGameCoins, handlePickedCoin } from "./misc.js";
 dotenv.config();
 
 const rooms = new Map(); // roomName -> Map of players
@@ -13,11 +12,6 @@ const io = new Server({
 });
 
 io.listen(process.env.PORT || 3001);
-
-// Generate a short unique ID (8 characters)
-function generateRoomId() {
-  return uuid().split("-")[0]; // Takes first part of UUID
-}
 
 const getRoomPlayers = (roomId) => {
   const room = rooms.get(roomId);

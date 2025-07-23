@@ -1,3 +1,5 @@
+import { v4 as uuid } from "uuid";
+
 export const coinPositionOption = [
   [-70, -2, -55],
   [-70, -2, -50],
@@ -298,4 +300,8 @@ export function handlePickedCoin(coinPosition, coins) {
   }
 
   return coins;
+}
+
+export function generateRoomId() {
+  return uuid().split("-")[0];
 }
