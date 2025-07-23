@@ -1,9 +1,11 @@
 import { Server } from "socket.io";
 import dotenv from "dotenv";
-import { generateRoomId, getGameCoins, handlePickedCoin } from "./misc.js";
+import { generateRoomId } from "./misc.js";
+import { getGameCoins, handlePickedCoin } from "./fns/coin.js";
 dotenv.config();
 
-const rooms = new Map(); // roomName -> Map of players
+const rooms = new Map();
+const MAX_ROOM_SIZE = 6;
 
 const io = new Server({
   cors: {
@@ -19,12 +21,25 @@ const getRoomPlayers = (roomId) => {
   return Array.from(room.players.values());
 };
 
-const addPlayerToRoom = (room, socketId, isSpectator) => {
+const createRoom = (id) => {
+  const room = generateRoomId();
+  rooms.set(room, {
+    creator: id,
+    inGame: false,
+    coins: getGameCoins(),
+    players: new Map(),
+  });
+
+  return room;
+};
+
+const addPlayerToRoom = (room, name, socketId, isSpectator) => {
   if (!rooms.has(room)) return;
   const roomPlayers = rooms.get(room).players;
   const position = [0, 0, 0];
   roomPlayers.set(socketId, {
     id: socketId,
+    name,
     coins: 0,
     position,
     rotation: 0,
@@ -58,26 +73,12 @@ const updatePlayerPositionInRoom = (room, socketId, position, rotation) => {
 io.on("connection", (socket) => {
   let room = null;
 
-  socket.on("createRoom", ({ isSpectator }) => {
-    console.log(isSpectator);
-    room = generateRoomId();
-    console.log("Create Room", room);
+  socket.on("createRoom", ({ isSpectator, name }) => {
+    room = createRoom(room, socket.id);
     socket.join(room);
-    rooms.set(room, {
-      creator: socket.id,
-      inGame: false,
-      coins: getGameCoins(),
-      players: new Map(),
-    });
-    const roomPlayers = rooms.get(room).players;
-    const position = [10, 0, 0];
-    roomPlayers.set(socket.id, {
-      id: socket.id,
-      coins: 0,
-      position,
-      rotation: 0,
-      isSpectator,
-    });
+    console.log("Create Room", room);
+
+    addPlayerToRoom(room, name, socket.id, isSpectator);
 
     socket.emit("id", socket.id);
     socket.emit("created", { room, isSpectator });
@@ -86,18 +87,20 @@ io.on("connection", (socket) => {
   socket.on("cancelRoom", () => {
     console.log("delete room", room);
     removeRoom(room);
-
     io.to(room).emit("roomDisconnected");
     socket.leave(room);
   });
 
-  socket.on("joinRoom", ({ roomName, isSpectator }) => {
+  socket.on("joinRoom", ({ roomName, isSpectator, name }) => {
     console.log("Join Room", roomName);
     if (!rooms.has(roomName))
       return socket.emit("error", "Room dose not exist.");
+    if (rooms.get(roomName).players.size >= MAX_ROOM_SIZE)
+      return socket.emit("error", "Room Is Full.");
+
     room = roomName;
     socket.join(room);
-    addPlayerToRoom(room, socket.id, isSpectator);
+    addPlayerToRoom(room, name, socket.id, isSpectator);
 
     socket.emit("joined", { isSpectator, id: socket.id });
     io.to(room).emit("playersCount", rooms.get(room).players.size);
@@ -141,7 +144,7 @@ io.on("connection", (socket) => {
           c[1] === coinPosition[1] &&
           c[2] === coinPosition[2]
       );
-    if (idx === -1) return; // Coin already picked
+    if (idx === -1) return;
 
     rooms.get(room).players.get(socket.id).coins += 1;
     io.to(room).emit(
