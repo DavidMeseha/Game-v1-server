@@ -18,7 +18,7 @@ io.listen(process.env.PORT || 3001);
 const getRoomPlayers = (roomId) => {
   const room = rooms.get(roomId);
   if (!room || !room.players) return [];
-  return Array.from(room.players.values());
+  return Array.from(room.players.values()).filter((p) => p.isConnected);
 };
 
 const createRoom = (id) => {
@@ -44,6 +44,8 @@ const addPlayerToRoom = (room, name, socketId, isSpectator) => {
     position,
     rotation: 0,
     isSpectator,
+    isConnected: true,
+    removeTimeoutId: null,
   });
 };
 
@@ -72,16 +74,18 @@ const updatePlayerPositionInRoom = (room, socketId, position, rotation) => {
 
 io.on("connection", (socket) => {
   let room = null;
+  socket.emit("id", socket.id);
 
   socket.on("createRoom", ({ isSpectator, name }) => {
-    room = createRoom(room, socket.id);
+    room = createRoom(socket.id);
     socket.join(room);
     console.log("Create Room", room);
 
     addPlayerToRoom(room, name, socket.id, isSpectator);
+    console.log(rooms.get(room));
 
-    socket.emit("id", socket.id);
     socket.emit("created", { room, isSpectator });
+    socket.emit("id", socket.id);
   });
 
   socket.on("cancelRoom", () => {
@@ -93,21 +97,24 @@ io.on("connection", (socket) => {
 
   socket.on("joinRoom", ({ roomName, isSpectator, name }) => {
     console.log("Join Room", roomName);
+    const targetRoom = rooms.get(roomName);
     if (!rooms.has(roomName))
       return socket.emit("error", "Room dose not exist.");
-    if (rooms.get(roomName).players.size >= MAX_ROOM_SIZE)
+
+    if (targetRoom.players.size >= MAX_ROOM_SIZE)
       return socket.emit("error", "Room Is Full.");
 
     room = roomName;
     socket.join(room);
     addPlayerToRoom(room, name, socket.id, isSpectator);
 
-    socket.emit("joined", { isSpectator, id: socket.id });
-    io.to(room).emit("playersCount", rooms.get(room).players.size);
-    io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    socket.emit("id", socket.id);
+    socket.emit("joined", { isSpectator, id: socket.id, roomId: room });
+    io.to(room).emit("players", getRoomPlayers(room));
     if (rooms.get(room).inGame) {
       socket.emit("started");
-      socket.emit("players", getRoomPlayers(room, socket.id));
+      socket.emit("players", getRoomPlayers(room));
+      socket.emit("coins", rooms.get(room).coins);
     }
   });
 
@@ -116,8 +123,7 @@ io.on("connection", (socket) => {
     removePlayerFromRoom(room, socket.id);
 
     if (rooms.get(room)) {
-      io.to(room).emit("playersCount", rooms.get(room).players?.size ?? 0);
-      io.to(room).emit("players", getRoomPlayers(room, socket.id));
+      io.to(room).emit("players", getRoomPlayers(room));
     }
 
     socket.leave(room);
@@ -130,11 +136,12 @@ io.on("connection", (socket) => {
 
     rooms.get(room).inGame = true;
     io.to(room).emit("started");
-    io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    io.to(room).emit("players", getRoomPlayers(room));
     io.to(room).emit("coins", rooms.get(room).coins);
   });
 
   socket.on("coinPicked", ({ coinPosition }) => {
+    console.log("Coin picked", coinPosition);
     if (!rooms.has(room)) return;
     const idx = rooms
       .get(room)
@@ -151,34 +158,75 @@ io.on("connection", (socket) => {
       "coins",
       handlePickedCoin(coinPosition, rooms.get(room).coins)
     );
-    io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    io.to(room).emit("players", getRoomPlayers(room));
   });
 
   socket.on("move", ({ position, rotation }) => {
     if (!rooms.has(room))
       return socket.emit("roomDisconnected", "Room dose not exist.");
     updatePlayerPositionInRoom(room, socket.id, position, rotation);
-    io.to(room).emit("players", getRoomPlayers(room, socket.id));
+    io.to(room).emit("players", getRoomPlayers(room));
+  });
+
+  socket.on("reconnect", ({ playerId, roomId }) => {
+    room = roomId;
+    console.log("Player Reconnect", playerId, roomId);
+    if (!rooms.has(room)) return socket.emit("reconnect_error", "room ended");
+
+    const targetRoom = rooms.get(room);
+    if (!targetRoom.players.has(playerId))
+      return socket.emit("reconnect_error", "Your Session Expired");
+
+    const player = targetRoom.players.get(playerId);
+    player.isConnected = true;
+    player.id = socket.id;
+    player.position = [0, 0, 0];
+
+    let isCreator = false;
+    if (playerId === targetRoom.creator) isCreator = true;
+
+    if (player.removeTimeoutId) {
+      clearTimeout(player.removeTimeoutId);
+      player.removeTimeoutId = null;
+    }
+
+    targetRoom.players.set(socket.id, { ...player });
+    targetRoom.creator = socket.id;
+    targetRoom.players.delete(playerId);
+    socket.join(room);
+
+    socket.emit("reconnected", {
+      inGame: targetRoom.inGame,
+      isSpectator: player.isSpectator,
+      newId: socket.id,
+      isCreator,
+      room,
+    });
+
+    socket.emit("coins", rooms.get(room).coins);
+    socket.emit("players", getRoomPlayers(room));
+    io.to(room).emit("players", getRoomPlayers(room));
   });
 
   socket.on("disconnect", () => {
-    console.log("Player Disconnect");
+    console.log("Player Disconnect", socket.id);
     if (!rooms.has(room)) return;
-    if (
-      rooms.get(room).creator !== socket.id &&
-      rooms.get(room).players.size > 1
-    ) {
-      rooms.get(room).creator = rooms
-        .get(room)
-        .players.values()
-        .next().value.id;
 
-      removePlayerFromRoom(room, socket.id);
-      io.to(room).emit("players", Array.from(rooms.get(room).players.values()));
-    } else {
-      removeRoom(room);
-      io.to(room).emit("roomDisconnected");
-    }
+    const player = rooms.get(room).players.get(socket.id);
+    player.isConnected = false;
+
+    io.to(room).emit("players", getRoomPlayers(room));
+    socket.leave(room);
+
+    player.removeTimeoutId = setTimeout(() => {
+      if (!rooms.has(room)) return;
+      if (rooms.get(room).players.size > 1) {
+        removePlayerFromRoom(room, socket.id);
+      } else {
+        removeRoom(room);
+        // io.to(room).emit("roomDisconnected");
+      }
+    }, 300000);
   });
 });
 
